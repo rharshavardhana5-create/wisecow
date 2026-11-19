@@ -1,4 +1,4 @@
-name: Build and Push Image
+name: Build, Push and Deploy
 
 on:
   push:
@@ -45,3 +45,29 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: wisecow
+
+      - name: Deploy to Kubernetes
+        run: |
+          IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${GITHUB_SHA::7}
+          kubectl apply -f k8s/
+          kubectl set image deployment/wisecow wisecow=$IMAGE
+          kubectl rollout status deployment/wisecow --timeout=180s
+          kubectl get pods
+
+      - name: Smoke test
+        run: |
+          kubectl port-forward service/wisecow 8080:80 &
+          sleep 5
+          curl -sf http://localhost:8080
