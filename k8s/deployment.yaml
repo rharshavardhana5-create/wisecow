@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: wisecow
-          image: wisecow:local
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/rharshavardhana5-create/wisecow:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 4499
