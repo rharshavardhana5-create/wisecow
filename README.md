@@ -1,28 +1,62 @@
-# Cow wisdom web server
+# Wisecow on Kubernetes
 
-## Prerequisites
+Containerised and deployed the Wisecow app (a small Bash web server that serves
+`fortune | cowsay` output on port 4499) to Kubernetes with an automated CI/CD
+pipeline and TLS.
+
+## What's included
+
+| Path | Purpose |
+|---|---|
+| `wisecow.sh` | Application source |
+| `Dockerfile` | Container image (Ubuntu 22.04 + fortune, cowsay, netcat) |
+| `k8s/deployment.yaml` | Deployment, 2 replicas, image from GHCR |
+| `k8s/service.yaml` | ClusterIP Service (80 -> 4499) |
+| `k8s/ingress.yaml` | Traefik Ingress with TLS for `wisecow.local` |
+| `.github/workflows/ci.yml` | Build, push and deploy pipeline |
+
+## Run locally with Docker
 
 ```
-sudo apt install fortune-mod cowsay -y
+docker build -t wisecow:local .
+docker run --rm -p 8080:4499 wisecow:local
 ```
+Open http://localhost:8080
 
-## How to use?
+## Deploy to Kubernetes (kind)
 
-1. Run `./wisecow.sh`
-2. Point the browser to server port (default 4499)
+```
+kind create cluster --name wisecow
+kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml
+kubectl port-forward service/wisecow 9090:80
+```
+Open http://localhost:9090
 
-## What to expect?
-![wisecow](https://github.com/nyrahul/wisecow/assets/9133227/8d6bfde3-4a5a-480e-8d55-3fef60300d98)
+## CI/CD (GitHub Actions)
 
-# Problem Statement
-Deploy the wisecow application as a k8s app
+On every push to `main` the workflow:
+1. **build-and-push**: builds the image and pushes it to
+   `ghcr.io/rharshavardhana5-create/wisecow` (tags: `latest` and the commit SHA).
+2. **deploy**: creates a temporary kind cluster, applies `k8s/`, sets the new
+   image, waits for the rollout and runs a smoke test with `curl`.
 
-## Requirement
-1. Create Dockerfile for the image and corresponding k8s manifest to deploy in k8s env. The wisecow service should be exposed as k8s service.
-2. Github action for creating new image when changes are made to this repo
-3. [Challenge goal]: Enable secure TLS communication for the wisecow app.
+## TLS
 
-## Expected Artifacts
-1. Github repo containing the app with corresponding dockerfile, k8s manifest, any other artifacts needed.
-2. Github repo with corresponding github action.
-3. Github repo should be kept private and the access should be enabled for following github IDs: nyrahul
+TLS is terminated at a Traefik Ingress using a self-signed certificate stored
+as the Kubernetes secret `wisecow-tls`. The key and certificate are never
+committed (see `.gitignore`).
+
+```
+helm repo add traefik https://traefik.github.io/charts
+helm install traefik traefik/traefik --namespace traefik --create-namespace
+# create tls.crt / tls.key for wisecow.local, then:
+kubectl create secret tls wisecow-tls --cert=tls.crt --key=tls.key
+kubectl apply -f k8s/ingress.yaml
+kubectl port-forward -n traefik service/traefik 8443:443
+curl -k --resolve wisecow.local:8443:127.0.0.1 https://wisecow.local:8443
+```
+`-k` is needed only because the certificate is self-signed.
+
+## Screenshots
+
+(Add: green GitHub Actions run, deploy job log, cow served over HTTPS.)
